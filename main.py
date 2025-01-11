@@ -1,5 +1,5 @@
 # Ultimate Crawler Script
-# Purpose: Crawl through multiple webpages and extract titles and links that are connected to each other, navigating through pages using a skip parameter.
+# Purpose: Crawl through multiple webpages and extract titles and links that are connected to each other, navigating through pages using a skip parameter. For each link, navigate to the page and extract file links. Ignore header and footer content.
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -21,6 +21,14 @@ def init_driver():
 def extract_titles_and_links(soup):
     title_link_pairs = []
 
+    # Ignore header and footer sections
+    header = soup.find('header')
+    footer = soup.find('footer')
+    if header:
+        header.decompose()
+    if footer:
+        footer.decompose()
+
     # Look for <a> tags that wrap titles (e.g., h3 elements)
     links = soup.find_all('a', href=True)
     for link in links:
@@ -34,6 +42,27 @@ def extract_titles_and_links(soup):
             title_link_pairs.append((title_text, link_href))
 
     return title_link_pairs
+
+# Function to extract file links from a given page
+def extract_file_links(page_url):
+    print(f"Visiting link: {page_url}")
+    driver.get(page_url)
+    time.sleep(3)  # Allow time for the page to load
+
+    # Parse the page with BeautifulSoup
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    file_links = []
+
+    # Look for file download links
+    file_anchors = soup.find_all('a', class_='files-groups_files_group_link__mCbGz', href=True)
+    for file_anchor in file_anchors:
+        file_title = file_anchor.get('title', 'No Title').strip()
+        file_href = file_anchor['href']
+        if file_href.startswith("/"):
+            file_href = "https://www.gov.il" + file_href  # Prepend base URL for relative links
+        file_links.append((file_title, file_href))
+
+    return file_links
 
 # Process pages using skip logic
 def process_pages(base_url):
@@ -61,6 +90,11 @@ def process_pages(base_url):
         print(f"Found {len(title_link_pairs)} connected titles and links on the page.")
         for idx, (title, link) in enumerate(title_link_pairs, 1):
             print(f"Title {idx}: {title} -> Link: {link}")
+
+            # Visit the link and extract file links
+            file_links = extract_file_links(link)
+            for file_idx, (file_title, file_link) in enumerate(file_links, 1):
+                print(f"  File {file_idx}: {file_title} -> Link: {file_link}")
 
         # Increment skip for the next page and update page count
         skip += 10
