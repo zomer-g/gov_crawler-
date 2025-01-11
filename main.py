@@ -1,6 +1,7 @@
 # Ultimate Crawler Script
-# Purpose: Crawl through multiple webpages and extract titles and links that are connected to each other, navigating through pages using a skip parameter. For each link, navigate to the page and extract file links. Ignore header and footer content.
+# Purpose: Crawl through multiple webpages and extract titles and links that are connected to each other, navigating through pages using a skip parameter. For each link, navigate to the page and extract file links. Ignore header and footer content, and write the results to a CSV file.
 
+import csv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -65,10 +66,9 @@ def extract_file_links(page_url):
     return file_links
 
 # Process pages using skip logic
-def process_pages(base_url):
+def process_pages(base_url, csv_writer):
     skip = 0
-    page_count = 0
-    while page_count < 3:  # Stop after processing the first 3 pages
+    while True:  # Process all pages until no data is found
         current_url = f"{base_url}&skip={skip}"
         print(f"Processing: {current_url}")
 
@@ -95,10 +95,11 @@ def process_pages(base_url):
             file_links = extract_file_links(link)
             for file_idx, (file_title, file_link) in enumerate(file_links, 1):
                 print(f"  File {file_idx}: {file_title} -> Link: {file_link}")
+                # Write to CSV
+                csv_writer.writerow([title, link, file_title, file_link, current_url])
 
-        # Increment skip for the next page and update page count
+        # Increment skip for the next page
         skip += 10
-        page_count += 1
 
 if __name__ == "__main__":
     # List of base URLs to process
@@ -111,8 +112,14 @@ if __name__ == "__main__":
     # Initialize the driver
     driver = init_driver()
 
-    try:
-        for base_url in base_urls:
-            process_pages(base_url)
-    finally:
-        driver.quit()
+    # Open CSV file for writing
+    with open('output.csv', mode='w', newline='', encoding='utf-8') as csv_file:
+        csv_writer = csv.writer(csv_file)
+        # Write the header row
+        csv_writer.writerow(['Title', 'Page Link', 'File Title', 'File Link', 'Source Page'])
+
+        try:
+            for base_url in base_urls:
+                process_pages(base_url, csv_writer)
+        finally:
+            driver.quit()
