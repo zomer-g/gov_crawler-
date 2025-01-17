@@ -1,6 +1,7 @@
-# Purpose of the script: Extract specific visible content after "<!-- Items -->", log object counts, and log the link of the "הבא" button.
+# Purpose of the script: Extract specific visible content after "<!-- Items -->", log object counts, log the link of the "הבא" button, and create a CSV with split content.
 # The script ensures all expandable sections are opened before extracting content.
 
+import csv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -13,7 +14,6 @@ import re
 # Define the URL to extract
 URL = "https://www.gov.il/he/departments/dynamiccollectors/conditionalagreements?skip=0"
 
-
 # Initialize the WebDriver
 def setup_driver():
     options = webdriver.ChromeOptions()
@@ -23,14 +23,12 @@ def setup_driver():
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     return driver
 
-
 # Function to expand all expandable content
 def expand_content(driver):
     try:
         while True:
             # Find "Show More" or "פרטים נוספים" buttons
-            buttons = driver.find_elements(By.XPATH,
-                                           "//button[contains(text(), 'Show More') or contains(text(), 'פרטים נוספים')]")
+            buttons = driver.find_elements(By.XPATH, "//button[contains(text(), 'Show More') or contains(text(), 'פרטים נוספים')]")
             if not buttons:
                 break
 
@@ -44,9 +42,8 @@ def expand_content(driver):
     except Exception as e:
         print(f"Error while expanding content: {e}")
 
-
 # Function to extract content after "<!-- Items -->" and log object counts
-def extract_content_to_txt(driver, output_file):
+def extract_content_to_txt_and_csv(driver, txt_output_file, csv_output_file):
     try:
         # Remove header and footer before extracting content
         driver.execute_script(
@@ -55,46 +52,58 @@ def extract_content_to_txt(driver, output_file):
 
         # Get the rendered HTML of the page
         content = driver.execute_script("return document.documentElement.outerHTML;")
-
+        
         # Extract content after "<!-- Items -->"
         items_content = content.split("<!-- Items -->")[1]
-
+        
         # Find and log the number of objects and total results
-        match = re.search(r"פריט מספר (\d+) מתוך (\d+) תוצאות", items_content)
+        match = re.search(r"פריט מספר \d+ מתוך (\d+) תוצאות", items_content)
         if match:
-            current_item = match.group(1)
-            total_items = match.group(2)
-            print(f"Current item: {current_item}, Total items: {total_items}")
+            total_items = int(match.group(1))
+            print(f"Total items: {total_items}")
         else:
             print("No item count found.")
 
-        # Save extracted content to TXT file
-        with open(output_file, "w", encoding="utf-8") as file:
-            file.write(items_content)
-        print(f"Content successfully written to {output_file}")
+        # Save full content to TXT file
+        with open(txt_output_file, "w", encoding="utf-8") as txt_file:
+            txt_file.write(items_content)
+        print(f"Content successfully written to {txt_output_file}")
+
+        # Split content into individual items
+        items = re.split(r"פריט מספר \d+ מתוך \d+ תוצאות", items_content)
+        items = [item.strip() for item in items if item.strip()]  # Remove empty items
+
+        if len(items) != total_items:
+            print("Warning: Number of extracted items does not match the total items.")
+
+        # Save split content to CSV file
+        with open(csv_output_file, "w", newline="", encoding="utf-8") as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(["Item Content"])
+            for i, item in enumerate(items, start=1):
+                csv_writer.writerow([item])
+
+        print(f"Content successfully written to {csv_output_file}")
+
     except Exception as e:
         print(f"Failed to write content to file: {e}")
-
 
 # Function to log the link of the "הבא" button
 def log_next_button_link(driver):
     try:
-        # Retrieve the current URL
-        current_url = driver.current_url
-
-        # Extract the current skip value and increment it
-        match = re.search(r"skip=(\d+)", current_url)
-        if match:
-            current_skip = int(match.group(1))
-            next_skip = current_skip + 10  # Assuming 10 items per page
-            next_url = re.sub(r"skip=\d+", f"skip={next_skip}", current_url)
-            print(f"Next page URL: {next_url}")
-        else:
-            print("Could not determine the next page URL from the current URL.")
+        next_button = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (By.XPATH, "//a[@ng-click='gotoPage(currentPage + 1)']")
+            )
+        )
+        # Log the link, even if href is empty (Angular handles the logic)
+        next_link = next_button.get_attribute("href")
+        if not next_link:
+            current_url = driver.current_url
+            next_link = re.sub(r"skip=\d+", lambda x: f"skip={int(x.group(0).split('=')[1]) + 10}", current_url)
+        print(f"Next button link: {next_link}")
     except Exception as e:
-        print(f"An error occurred while determining the next page URL: {e}")
-
-
+        print(f"Could not find the 'הבא' button: {e}")
 
 # Main script
 def main():
@@ -102,13 +111,14 @@ def main():
     try:
         driver.get(URL)
         WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
+        
         # Expand all content
         expand_content(driver)
 
-        # Extract and save content to TXT file
-        output_file = "filtered_content.txt"
-        extract_content_to_txt(driver, output_file)
+        # Extract and save content to TXT and CSV files
+        txt_output_file = "filtered_content.txt"
+        csv_output_file = "filtered_content.csv"
+        extract_content_to_txt_and_csv(driver, txt_output_file, csv_output_file)
 
         # Log the link of the "הבא" button
         log_next_button_link(driver)
@@ -117,7 +127,6 @@ def main():
         print(f"An error occurred: {e}")
     finally:
         driver.quit()
-
 
 if __name__ == "__main__":
     main()
