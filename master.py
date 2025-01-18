@@ -11,7 +11,7 @@ import re
 import pandas as pd
 
 # Define the URL to extract
-URL = "https://www.gov.il/he/Departments/DynamicCollectors/guidelines-state-attorney?skip=0"
+URL = "https://www.gov.il/he/departments/dynamiccollectors/conditionalagreements?skip=0"
 
 
 # Initialize the WebDriver
@@ -106,37 +106,11 @@ def extract_content_to_txt_and_csv(driver, txt_output_file, csv_output_file):
 
         print(f"Content successfully written to {csv_output_file}")
 
-        # Log the last item
-        if items:
-            print(f"Last item on the page (refined):\n{items[-1]}")
-        else:
-            print("No items found.")
-
         return total_items
 
     except Exception as e:
         print(f"Failed to write content to file: {e}")
         return 0
-
-
-# Function to generate a parsing structure CSV
-def generate_parsing_structure(items):
-    parsing_structure_file = "parsing_structure.csv"
-    with open(parsing_structure_file, "w", newline="", encoding="utf-8") as ps_csvfile:
-        ps_csv_writer = csv.writer(ps_csvfile, quoting=csv.QUOTE_MINIMAL)
-        ps_csv_writer.writerow(["Title", "HTML Structure (Selector)", "Value Extraction (Selector)"])
-
-        # Parse a single item to infer structure (assuming all items share the same structure)
-        if items:
-            soup = BeautifulSoup(items[0], "html.parser")
-            for tag in soup.find_all():
-                if tag.name and tag.string:
-                    title = tag.name
-                    html_selector = f"<{tag.name}>"  # Basic HTML tag
-                    value_selector = f"{tag.string.strip()}"  # Text inside the tag
-                    ps_csv_writer.writerow([title, html_selector, value_selector])
-
-    print(f"Parsing structure saved to {parsing_structure_file}")
 
 
 # Function to parse and extract structure from filtered_content.csv
@@ -148,19 +122,22 @@ def parse_items_from_csv(csv_path):
     parsed_items_file = "parsed_items.csv"
     with open(parsed_items_file, "w", newline="", encoding="utf-8") as parsed_csvfile:
         parsed_csv_writer = csv.writer(parsed_csvfile, quoting=csv.QUOTE_MINIMAL)
-        parsed_csv_writer.writerow(["Item Number", "Title", "Value"])
+        parsed_csv_writer.writerow(["Item Number", "Title", "Value", "Link"])
 
         for index, row in df.iterrows():
             item_number = row['Item Number']
             content = row['Content']
             soup = BeautifulSoup(content, 'html.parser')
 
-            # Parse titles and values
+            # Parse titles, values, and links
             for element in soup.find_all():
-                if element.name and element.string:
-                    title = element.name
-                    value = element.string.strip()
-                    parsed_csv_writer.writerow([item_number, title, value])
+                title = element.name
+                value = element.get_text(strip=True) if element.get_text(strip=True) else None
+                link = element.get('href', None)
+
+                # Write only non-empty entries
+                if value or link:
+                    parsed_csv_writer.writerow([item_number, title, value, link])
 
     print(f"Parsed items saved to {parsed_items_file}")
 
@@ -195,13 +172,6 @@ def main():
         txt_output_file = "filtered_content.txt"
         csv_output_file = "filtered_content.csv"
         total_items = extract_content_to_txt_and_csv(driver, txt_output_file, csv_output_file)
-
-        # Generate parsing structure CSV
-        with open(txt_output_file, "r", encoding="utf-8") as file:
-            items_content = file.read()
-        items = re.split(r"פריט מספר \d+ מתוך \d+ תוצאות", items_content)
-        items = [item.strip() for item in items if item.strip()]  # Remove empty items
-        generate_parsing_structure(items)
 
         # Parse items from filtered_content.csv
         parse_items_from_csv("filtered_content.csv")
