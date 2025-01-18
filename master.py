@@ -11,7 +11,7 @@ import re
 import pandas as pd
 
 # Define the URL to extract
-URL = "https://www.gov.il/he/departments/dynamiccollectors/conditionalagreements?skip=0"
+URL = "https://www.gov.il/he/Departments/DynamicCollectors/guidelines-state-attorney?skip=20"
 
 
 # Initialize the WebDriver
@@ -115,31 +115,67 @@ def extract_content_to_txt_and_csv(driver, txt_output_file, csv_output_file):
 
 # Function to parse and extract structure from filtered_content.csv
 def parse_items_from_csv(csv_path):
+    import pandas as pd
+    from bs4 import BeautifulSoup
+    import csv
+
     # Load the CSV file
     df = pd.read_csv(csv_path)
 
-    # Extract structure from each item's content
+    # Output file for parsed items
     parsed_items_file = "parsed_items.csv"
+
+    # Open the parsed CSV file for writing
     with open(parsed_items_file, "w", newline="", encoding="utf-8") as parsed_csvfile:
         parsed_csv_writer = csv.writer(parsed_csvfile, quoting=csv.QUOTE_MINIMAL)
-        parsed_csv_writer.writerow(["Item Number", "Title", "Value", "Link"])
 
+        # Write headers for parsed data
+        parsed_csv_writer.writerow(["Item Number", "Type", "Content"])
+
+        # Iterate through the rows in the dataframe
         for index, row in df.iterrows():
             item_number = row['Item Number']
             content = row['Content']
+
+            # Parse the HTML content
             soup = BeautifulSoup(content, 'html.parser')
 
-            # Parse titles, values, and links
+            # Extract structured data from the content
+            current_title = None
             for element in soup.find_all():
-                title = element.name
-                value = element.get_text(strip=True) if element.get_text(strip=True) else None
+                text_content = element.get_text(strip=True)
+
+                # Skip empty elements
+                if not text_content:
+                    continue
+
+                # Check if the element is a title
+                if element.name in ["h1", "h2", "h3", "label", "strong"]:  # Define title tags
+                    # Write the previous title-value pair, if any
+                    if current_title:
+                        parsed_csv_writer.writerow([item_number, "Title", current_title])
+                        parsed_csv_writer.writerow([item_number, "Value", ""])
+                        current_title = None
+                    # Set the current title
+                    current_title = text_content
+                else:
+                    # Write the current title and value pair
+                    if current_title:
+                        parsed_csv_writer.writerow([item_number, "Title", current_title])
+                        parsed_csv_writer.writerow([item_number, "Value", text_content])
+                        current_title = None
+
+                # Extract any hyperlink associated with the tag
                 link = element.get('href', None)
+                if link:
+                    parsed_csv_writer.writerow([item_number, "Link", link])
 
-                # Write only non-empty entries
-                if value or link:
-                    parsed_csv_writer.writerow([item_number, title, value, link])
+            # Write any leftover title without a value
+            if current_title:
+                parsed_csv_writer.writerow([item_number, "Title", current_title])
+                parsed_csv_writer.writerow([item_number, "Value", ""])
 
-    print(f"Parsed items saved to {parsed_items_file}")
+    print(f"Parsed items have been saved to {parsed_items_file}")
 
 
 # Function to calculate and log the next page link
