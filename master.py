@@ -5,11 +5,13 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
 import time
 import re
+import pandas as pd
 
 # Define the URL to extract
-URL = "https://www.gov.il/he/departments/dynamiccollectors/conditionalagreements?skip=0"
+URL = "https://www.gov.il/he/Departments/DynamicCollectors/guidelines-state-attorney?skip=0"
 
 
 # Initialize the WebDriver
@@ -79,7 +81,7 @@ def extract_content_to_txt_and_csv(driver, txt_output_file, csv_output_file):
 
         # Adjust the last item's end using the specified boundary phrase
         if items:
-            last_item_boundary = "</li><!-- end ngRepeat: item in dynamicCtrl.ViewModel.dataResults -->"
+            last_item_boundary = "</div><!-- end ngRepeat:"
             if last_item_boundary in items[-1]:
                 items[-1] = items[-1].split(last_item_boundary)[0]
 
@@ -117,6 +119,52 @@ def extract_content_to_txt_and_csv(driver, txt_output_file, csv_output_file):
         return 0
 
 
+# Function to generate a parsing structure CSV
+def generate_parsing_structure(items):
+    parsing_structure_file = "parsing_structure.csv"
+    with open(parsing_structure_file, "w", newline="", encoding="utf-8") as ps_csvfile:
+        ps_csv_writer = csv.writer(ps_csvfile, quoting=csv.QUOTE_MINIMAL)
+        ps_csv_writer.writerow(["Title", "HTML Structure (Selector)", "Value Extraction (Selector)"])
+
+        # Parse a single item to infer structure (assuming all items share the same structure)
+        if items:
+            soup = BeautifulSoup(items[0], "html.parser")
+            for tag in soup.find_all():
+                if tag.name and tag.string:
+                    title = tag.name
+                    html_selector = f"<{tag.name}>"  # Basic HTML tag
+                    value_selector = f"{tag.string.strip()}"  # Text inside the tag
+                    ps_csv_writer.writerow([title, html_selector, value_selector])
+
+    print(f"Parsing structure saved to {parsing_structure_file}")
+
+
+# Function to parse and extract structure from filtered_content.csv
+def parse_items_from_csv(csv_path):
+    # Load the CSV file
+    df = pd.read_csv(csv_path)
+
+    # Extract structure from each item's content
+    parsed_items_file = "parsed_items.csv"
+    with open(parsed_items_file, "w", newline="", encoding="utf-8") as parsed_csvfile:
+        parsed_csv_writer = csv.writer(parsed_csvfile, quoting=csv.QUOTE_MINIMAL)
+        parsed_csv_writer.writerow(["Item Number", "Title", "Value"])
+
+        for index, row in df.iterrows():
+            item_number = row['Item Number']
+            content = row['Content']
+            soup = BeautifulSoup(content, 'html.parser')
+
+            # Parse titles and values
+            for element in soup.find_all():
+                if element.name and element.string:
+                    title = element.name
+                    value = element.string.strip()
+                    parsed_csv_writer.writerow([item_number, title, value])
+
+    print(f"Parsed items saved to {parsed_items_file}")
+
+
 # Function to calculate and log the next page link
 def calculate_next_page_link(current_url, total_items):
     try:
@@ -147,6 +195,16 @@ def main():
         txt_output_file = "filtered_content.txt"
         csv_output_file = "filtered_content.csv"
         total_items = extract_content_to_txt_and_csv(driver, txt_output_file, csv_output_file)
+
+        # Generate parsing structure CSV
+        with open(txt_output_file, "r", encoding="utf-8") as file:
+            items_content = file.read()
+        items = re.split(r"פריט מספר \d+ מתוך \d+ תוצאות", items_content)
+        items = [item.strip() for item in items if item.strip()]  # Remove empty items
+        generate_parsing_structure(items)
+
+        # Parse items from filtered_content.csv
+        parse_items_from_csv("filtered_content.csv")
 
         # Calculate the next page link
         if total_items > 0:
